@@ -20,10 +20,8 @@ import {
 } from "tesseract.js";
 
 // Worker cho pdfjs-dist (Vite). Cần: npm install pdfjs-dist xlsx lucide-react
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs';
 
 /**
  * BẢNG DỮ LIỆU LỆNH BẮT BỊ CAN — 11 CỘT CỐ ĐỊNH
