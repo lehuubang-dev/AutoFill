@@ -7,21 +7,20 @@ import {
   FileText,
   Pencil,
   X as XIcon,
+  Search,
   Upload,
   Loader2,
   Info,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
-import {
-  createWorker,
-  PSM,
-  type Worker as TesseractWorker,
-} from "tesseract.js";
+import { createWorker, PSM, type Worker as TesseractWorker } from "tesseract.js";
 
 // Worker cho pdfjs-dist (Vite). Cần: npm install pdfjs-dist xlsx lucide-react
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 /**
  * BẢNG DỮ LIỆU LỆNH BẮT BỊ CAN — 11 CỘT CỐ ĐỊNH
@@ -520,28 +519,27 @@ function hasUsableData(ex: Extracted): boolean {
   return Boolean(f.hoTen || f.cccd || f.lenh || f.noiThuongTru);
 }
 
-interface PendingItem {
-  draft: Draft;
-  batNote: string;
-}
-
-// Dữ liệu đọc từ PDF -> giá trị điền thẳng vào form.
-// Dữ liệu đọc từ PDF/ảnh -> giá trị điền thẳng vào form. Các trường
-// "sinhNgay"/"biBatNgay" đã ở dạng dd/mm/yyyy sẵn (kiểu "datestr") nên
-// giữ nguyên, không cần đổi sang yyyy-MM-dd.
-function toDraft(ex: Extracted): PendingItem {
-  const draft = ALL_FIELD_KEYS.reduce((acc, k) => {
-    const raw = ex.fields[k] ?? DEFAULTS[k] ?? "";
-    acc[k] = DATE_KEYS.includes(k) ? toIsoDate(raw) : raw;
+// Dữ liệu đọc từ PDF/ảnh -> dựng thẳng thành một dòng dữ liệu hoàn
+// chỉnh để thêm ngay vào bảng, không cần qua form nhập liệu nữa.
+function buildRecord(ex: Extracted): BiCanRecord {
+  const base = ALL_FIELD_KEYS.reduce((acc, k) => {
+    acc[k] = ex.fields[k] ?? DEFAULTS[k] ?? "";
     return acc;
   }, {} as Draft);
-  draft.cccd = parseCccd(draft.cccd).value;
-  return { draft, batNote: ex.batNote };
+  const { value: cccdValue, note } = parseCccd(base.cccd);
+  return {
+    _id: Date.now() + Math.random(),
+    x: "GP",
+    cccdNote: note,
+    batNote: ex.batNote,
+    ...base,
+    cccd: cccdValue,
+  };
 }
 
 // Đọc lớp văn bản có sẵn (nếu là PDF được soạn thảo, không phải scan).
-async function extractTextLayer(pdf: pdfjsLib.PDFDocumentProxy): Promise<string> {
-  let fullText = "";
+async function extractTextLayer(pdf: pdfjsLib.PDFDocumentProxy): Promise<string[]> {
+  const pages: string[] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
@@ -552,9 +550,9 @@ async function extractTextLayer(pdf: pdfjsLib.PDFDocumentProxy): Promise<string>
         return item.str + (item.hasEOL ? " " : "");
       })
       .join("");
-    fullText += pageText + " ";
+    pages.push(pageText);
   }
-  return fullText;
+  return pages;
 }
 
 // File scan ảnh (mộc dấu, chữ ký, chụp lại...) không có lớp văn bản
@@ -573,13 +571,13 @@ function getOcrWorker(): Promise<TesseractWorker> {
 async function extractTextByOcr(
   pdf: pdfjsLib.PDFDocumentProxy,
   onProgress?: (page: number, total: number) => void
-): Promise<string> {
+): Promise<string[]> {
   const worker = await getOcrWorker();
   // Đặt cùng chế độ phân đoạn với nhánh OCR ảnh (xem giải thích ở
   // extractTextFromImage) vì worker dùng chung, tránh kết quả phụ
   // thuộc vào việc hàm nào chạy trước.
   await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
-  let fullText = "";
+  const pages: string[] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     onProgress?.(p, pdf.numPages);
     const page = await pdf.getPage(p);
@@ -590,12 +588,15 @@ async function extractTextByOcr(
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) continue;
+    if (!ctx) {
+      pages.push("");
+      continue;
+    }
     await page.render({ canvasContext: ctx, viewport, canvas }).promise;
     const { data } = await worker.recognize(canvas);
-    fullText += data.text + " ";
+    pages.push(data.text);
   }
-  return fullText;
+  return pages;
 }
 
 function cleanupText(raw: string): string {
@@ -608,7 +609,7 @@ function cleanupText(raw: string): string {
   // nhau (ví dụ tách đôi một dãy số CCCD), nên phải xoá hẳn, không
   // thay bằng khoảng trắng.
   return raw
-    .replace(/(?:\u200B|\u200C|\u200D|\uFEFF)/g, "")
+    .replace(/\u200B|\u200C|\u200D|\uFEFF/g, "")
     .replace(/\u00A0/g, " ")
     .normalize("NFC")
     .replace(/\s+/g, " ")
@@ -616,7 +617,12 @@ function cleanupText(raw: string): string {
 }
 
 interface PdfExtraction {
-  text: string;
+  // Mỗi phần tử là văn bản của MỘT trang (đã cleanupText). Mẫu 74/77
+  // luôn đúng 1 bị can/1 trang, nên tách theo trang thật của file thay
+  // vì dò mốc trên văn bản gộp nhiều trang — tránh trường hợp OCR đọc
+  // sai/không thấy mốc ở một vài trang khiến cả các trang sau đó bị
+  // nuốt chung vào một khối duy nhất.
+  pages: string[];
   usedOcr: boolean;
 }
 
@@ -627,16 +633,16 @@ async function extractTextFromPdf(
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
 
-  const layerText = cleanupText(await extractTextLayer(pdf));
+  const layerPages = (await extractTextLayer(pdf)).map(cleanupText);
   // Ngưỡng thực nghiệm: mỗi trang mẫu 74/77 gõ máy có vài trăm ký tự.
   // Dưới ~40 ký tự/trang gần như chắc chắn là ảnh scan không có chữ.
-  const perPageThreshold = 40 * pdf.numPages;
-  if (layerText.length >= perPageThreshold) {
-    return { text: layerText, usedOcr: false };
+  const totalLen = layerPages.reduce((sum, t) => sum + t.length, 0);
+  if (totalLen >= 40 * pdf.numPages) {
+    return { pages: layerPages, usedOcr: false };
   }
 
-  const ocrText = cleanupText(await extractTextByOcr(pdf, onOcrProgress));
-  return { text: ocrText, usedOcr: true };
+  const ocrPages = (await extractTextByOcr(pdf, onOcrProgress)).map(cleanupText);
+  return { pages: ocrPages, usedOcr: true };
 }
 
 // Ảnh chụp bằng điện thoại thường có độ phân giải hiệu dụng thấp cho
@@ -679,7 +685,7 @@ async function preprocessImageForOcr(file: File): Promise<HTMLCanvasElement> {
 }
 
 // Ảnh chụp/scan (jpg, png...) không có khái niệm "lớp văn bản" — luôn
-// phải OCR trực tiếp trên ảnh.
+// phải OCR trực tiếp trên ảnh. Một ảnh = một trang = một bị can.
 async function extractTextFromImage(
   file: File,
   onOcrProgress?: (page: number, total: number) => void
@@ -693,7 +699,7 @@ async function extractTextFromImage(
   // đọc sai thứ tự dòng, làm rớt đúng các trường này.
   await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
   const { data } = await worker.recognize(canvas);
-  return { text: cleanupText(data.text), usedOcr: true };
+  return { pages: [cleanupText(data.text)], usedOcr: true };
 }
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/bmp"];
@@ -721,7 +727,6 @@ export default function LenhBatBiCanForm() {
   const [isParsingPdf, setIsParsingPdf] = useState(false);
   const [pdfImportSummary, setPdfImportSummary] = useState<string | null>(null);
   const [draftBatNote, setDraftBatNote] = useState("");
-  const [pendingQueue, setPendingQueue] = useState<PendingItem[]>([]);
   const [rawPdfText, setRawPdfText] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<BiCanRecord | null>(null);
 
@@ -757,22 +762,6 @@ export default function LenhBatBiCanForm() {
     setEditingId(null);
   }
 
-  // Nạp hồ sơ kế tiếp đã đọc từ PDF vào form; hết hàng đợi thì để form trống.
-  function loadNextPending() {
-    setEditingId(null);
-    setPendingQueue((q) => {
-      const [next, ...rest] = q;
-      if (next) {
-        setDraft(next.draft);
-        setDraftBatNote(next.batNote);
-      } else {
-        setDraft(emptyDraft);
-        setDraftBatNote("");
-      }
-      return rest;
-    });
-  }
-
   function saveDraft() {
     if (!draft.hoTen.trim()) return;
     const { value: cccdValue, note } = parseCccd(draft.cccd);
@@ -795,7 +784,7 @@ export default function LenhBatBiCanForm() {
         { _id: Date.now(), x: "GP", cccdNote: note, batNote: draftBatNote, ...row },
       ]);
     }
-    loadNextPending();
+    resetDraft();
   }
 
   function editRow(r: BiCanRecord) {
@@ -822,12 +811,12 @@ export default function LenhBatBiCanForm() {
     setPdfImportSummary(null);
     setRawPdfText("");
     try {
-      const items: PendingItem[] = [];
+      const newRecords: BiCanRecord[] = [];
       let rawAll = "";
       let anyOcr = false;
 
       for (const file of Array.from(fileList)) {
-        const { text, usedOcr } = await extractTextFromFile(file, (page, total) => {
+        const { pages, usedOcr } = await extractTextFromFile(file, (page, total) => {
           setPdfImportSummary(
             total > 1
               ? `Không thấy chữ gõ máy trong "${file.name}" — đang nhận dạng chữ (OCR) trang ${page}/${total}...`
@@ -835,26 +824,30 @@ export default function LenhBatBiCanForm() {
           );
         });
         anyOcr = anyOcr || usedOcr;
-        rawAll += `\n===== ${file.name}${usedOcr ? " (đã OCR)" : ""} (${text.length} ký tự) =====\n${text}\n`;
-        splitLenhBlocks(text).forEach((block) => {
-          const ex = extractFromBlock(block);
-          if (!hasUsableData(ex)) return;
-          items.push(toDraft(ex));
+
+        pages.forEach((pageText, i) => {
+          rawAll += `\n===== ${file.name} — trang ${i + 1}/${pages.length}${
+            usedOcr ? " (đã OCR)" : ""
+          } (${pageText.length} ký tự) =====\n${pageText}\n`;
+          // Tách trong PHẠM VI MỘT TRANG: mẫu 74/77 luôn đúng 1 bị can/1
+          // trang, nên chỉ dùng splitLenhBlocks để đề phòng trường hợp
+          // hiếm khi một trang chứa nhiều người, không dùng nó để tách
+          // giữa các trang — tránh việc OCR đọc sai mốc ở một trang làm
+          // nuốt luôn các trang sau vào chung một khối.
+          splitLenhBlocks(pageText).forEach((block) => {
+            const ex = extractFromBlock(block);
+            if (!hasUsableData(ex)) return;
+            newRecords.push(buildRecord(ex));
+          });
         });
       }
       setRawPdfText(rawAll.trim());
 
-      if (items.length > 0) {
-        const [first, ...rest] = items;
-        setEditingId(null);
-        setDraft(first.draft);
-        setDraftBatNote(first.batNote);
-        setPendingQueue(rest);
+      if (newRecords.length > 0) {
+        setRecords((rs) => [...rs, ...newRecords]);
         setPdfImportSummary(
           (anyOcr ? "Đã nhận dạng chữ từ ảnh scan (OCR). " : "") +
-            (rest.length === 0
-              ? 'Đã điền 1 hồ sơ vào form bên dưới. Kiểm tra lại (nhất là các mục viết tay) rồi bấm "Thêm vào bảng".'
-              : `Đọc được ${items.length} hồ sơ. Hồ sơ đầu tiên đã điền sẵn vào form; mỗi lần bấm "Thêm vào bảng" sẽ tự nạp hồ sơ kế tiếp.`)
+            `Đã tự động thêm ${newRecords.length} hồ sơ vào bảng dữ liệu bên dưới. Vui lòng kiểm tra lại từng dòng (nhất là các mục viết tay) trước khi xuất file.`
         );
       } else if (rawAll.replace(/=+[^\n]*\n/g, "").trim().length < 200) {
         setPdfImportSummary(
@@ -987,10 +980,10 @@ export default function LenhBatBiCanForm() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs tracking-wide text-[#8A6A3B]">Cơ quan Cảnh sát điều tra</p>
-              <h1 className="mt-1 font-serif text-3xl">BẢNG DỮ LIỆU LỆNH TẠM GIAM BỊ CAN</h1>
+              <h1 className="mt-1 font-serif text-3xl">BẢNG DỮ LIỆU LỆNH TẠM GIỮ BỊ CAN</h1>
               <p className="mt-2 max-w-xl text-sm text-[#5B5B54]">
-                11 cột cố định, kèm cột X mặc định "GP". Trường không có
-                trên văn bản thì để trống — hệ thống tô đỏ, không suy diễn.
+                Cột X mặc định "GP". Trường nào không có
+                trên văn bản để trống — hệ thống tô đỏ, không suy diễn.
               </p>
             </div>
             <div className="flex gap-2">
@@ -1016,7 +1009,9 @@ export default function LenhBatBiCanForm() {
                 74) hoặc "Quyết định tạm giữ" (mẫu số 77) — nhận cả PDF (gõ
                 máy hoặc scan) lẫn ảnh chụp/scan jpg, png. Hệ thống tự nhận
                 dạng chữ bằng OCR khi cần, có thể mất vài giây mỗi trang/ảnh.
-                Nội dung đọc được sẽ tự điền vào form bên dưới.
+                Đọc xong sẽ tự động thêm thẳng vào bảng dữ liệu bên dưới —
+                một file chứa nhiều bị can cũng được tách và thêm đủ từng
+                dòng, không cần điền qua form.
               </p>
               <label className="btn-secondary inline-flex cursor-pointer">
                 {isParsingPdf ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
@@ -1094,22 +1089,15 @@ export default function LenhBatBiCanForm() {
                 <XIcon size={16} /> Huỷ sửa
               </button>
             )}
-            {editingId === null && pendingQueue.length > 0 && (
-              <>
-                <button onClick={loadNextPending} className="btn-secondary">
-                  <XIcon size={16} /> Bỏ qua hồ sơ này
-                </button>
-                <span className="text-sm text-[#5B5B54]">
-                  Còn {pendingQueue.length} hồ sơ chờ kiểm tra.
-                </span>
-              </>
-            )}
           </div>
         </section>
 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="relative w-full max-w-sm">
-      
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8A8A80]"
+            />
             <input
               className="input pl-9"
               placeholder="Tìm theo họ tên, CCCD, địa chỉ, số lệnh..."
