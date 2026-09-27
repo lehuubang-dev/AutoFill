@@ -14,13 +14,14 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
-import { createWorker, PSM, type Worker as TesseractWorker } from "tesseract.js";
+import {
+  createWorker,
+  PSM,
+  type Worker as TesseractWorker,
+} from "tesseract.js";
 
 // Worker cho pdfjs-dist (Vite). Cần: npm install pdfjs-dist xlsx lucide-react
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.mjs";
 
 /**
  * BẢNG DỮ LIỆU LỆNH BẮT BỊ CAN — 11 CỘT CỐ ĐỊNH
@@ -69,26 +70,80 @@ interface FieldConfig {
   full?: boolean;
 }
 
-const DAN_TOC_OPTIONS = ["Kinh", "Tày", "Thái", "Mường", "Khmer", "Nùng", "Hoa", "Dao"];
-const TON_GIAO_OPTIONS = ["Không", "Phật giáo", "Công giáo", "Tin lành", "Hòa Hảo", "Cao Đài"];
+const DAN_TOC_OPTIONS = [
+  "Kinh",
+  "Tày",
+  "Thái",
+  "Mường",
+  "Khmer",
+  "Nùng",
+  "Hoa",
+  "Dao",
+];
+const TON_GIAO_OPTIONS = [
+  "Không",
+  "Phật giáo",
+  "Công giáo",
+  "Tin lành",
+  "Hòa Hảo",
+  "Cao Đài",
+];
 
 const FIELDS: FieldConfig[] = [
   { key: "hoTen", label: "Họ tên", type: "text", placeholder: "Nguyễn Văn A" },
-  { key: "gioiTinh", label: "Giới tính", type: "select", selectOptions: ["Nam", "Nữ"] },
-  { key: "sinhNgay", label: "Sinh ngày", type: "datestr", placeholder: "dd/mm/yyyy" },
-  { key: "quocTich", label: "Quốc tịch", type: "text", datalistOptions: ["Việt Nam"] },
-  { key: "danToc", label: "Dân tộc", type: "text", datalistOptions: DAN_TOC_OPTIONS },
-  { key: "tonGiao", label: "Tôn giáo", type: "text", datalistOptions: TON_GIAO_OPTIONS },
+  {
+    key: "gioiTinh",
+    label: "Giới tính",
+    type: "select",
+    selectOptions: ["Nam", "Nữ"],
+  },
+  {
+    key: "sinhNgay",
+    label: "Sinh ngày",
+    type: "datestr",
+    placeholder: "dd/mm/yyyy",
+  },
+  {
+    key: "quocTich",
+    label: "Quốc tịch",
+    type: "text",
+    datalistOptions: ["Việt Nam"],
+  },
+  {
+    key: "danToc",
+    label: "Dân tộc",
+    type: "text",
+    datalistOptions: DAN_TOC_OPTIONS,
+  },
+  {
+    key: "tonGiao",
+    label: "Tôn giáo",
+    type: "text",
+    datalistOptions: TON_GIAO_OPTIONS,
+  },
   { key: "cccd", label: "Thẻ CCCD/Thẻ CC", type: "text", placeholder: "12 số" },
-  { key: "biBatNgay", label: "Bị bắt ngày", type: "datestr", placeholder: "dd/mm/yyyy" },
-  { key: "noiThuongTru", label: "Nơi thường trú", type: "textarea", full: true },
+  {
+    key: "biBatNgay",
+    label: "Bị bắt ngày",
+    type: "datestr",
+    placeholder: "dd/mm/yyyy",
+  },
+  {
+    key: "noiThuongTru",
+    label: "Nơi thường trú",
+    type: "textarea",
+    full: true,
+  },
   { key: "lenh", label: "Lệnh", type: "textarea", full: true },
 ];
 
-const FIELD_MAP: Record<FieldKey, FieldConfig> = FIELDS.reduce((acc, f) => {
-  acc[f.key] = f;
-  return acc;
-}, {} as Record<FieldKey, FieldConfig>);
+const FIELD_MAP: Record<FieldKey, FieldConfig> = FIELDS.reduce(
+  (acc, f) => {
+    acc[f.key] = f;
+    return acc;
+  },
+  {} as Record<FieldKey, FieldConfig>,
+);
 
 // Nhóm trường dùng chung cho cả form nhập liệu lẫn hộp thoại xem chi
 // tiết, để hai nơi này luôn hiển thị đồng nhất.
@@ -100,7 +155,15 @@ interface FieldSection {
 const FIELD_SECTIONS: FieldSection[] = [
   {
     title: "Nhân thân",
-    keys: ["hoTen", "gioiTinh", "sinhNgay", "quocTich", "danToc", "tonGiao", "cccd"],
+    keys: [
+      "hoTen",
+      "gioiTinh",
+      "sinhNgay",
+      "quocTich",
+      "danToc",
+      "tonGiao",
+      "cccd",
+    ],
   },
   {
     title: "Bắt giữ & nơi cư trú",
@@ -109,11 +172,16 @@ const FIELD_SECTIONS: FieldSection[] = [
 ];
 
 const ALL_FIELD_KEYS: FieldKey[] = FIELDS.map((f) => f.key);
-const DATE_KEYS: FieldKey[] = FIELDS.filter((f) => f.type === "date").map((f) => f.key);
-const LABEL_MAP = FIELDS.reduce((acc, f) => {
-  acc[f.key] = f.label;
-  return acc;
-}, {} as Record<FieldKey, string>);
+const DATE_KEYS: FieldKey[] = FIELDS.filter((f) => f.type === "date").map(
+  (f) => f.key,
+);
+const LABEL_MAP = FIELDS.reduce(
+  (acc, f) => {
+    acc[f.key] = f.label;
+    return acc;
+  },
+  {} as Record<FieldKey, string>,
+);
 
 const DEFAULTS: Partial<Record<FieldKey, string>> = {
   danToc: "Kinh",
@@ -149,7 +217,12 @@ interface ExportField {
 const EXPORT_FIELDS: ExportField[] = [
   { col: "A", label: "X", key: "x" },
   { col: "B", label: "Họ tên", key: "hoTen" },
-  { col: "C", label: "Năm sinh", key: "sinhNgay", getValue: (r) => r.sinhNgay.split("/").pop() ?? "" },
+  {
+    col: "C",
+    label: "Năm sinh",
+    key: "sinhNgay",
+    getValue: (r) => r.sinhNgay.split("/").pop() ?? "",
+  },
   { col: "E", label: "ĐKTT", key: "noiThuongTru" },
   { col: "L", label: "GT", key: "gioiTinh" },
   { col: "M", label: "Dân tộc", key: "danToc" },
@@ -217,7 +290,11 @@ function toIsoDate(displayDate: string): string {
 // (dd mm yyyy). Không tự đoán/sửa nếu người dùng đã gõ dấu "/" sẵn.
 function maskDateTyping(raw: string): string {
   const digits = raw.replace(/\D/g, "").slice(0, 8);
-  const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+  const parts = [
+    digits.slice(0, 2),
+    digits.slice(2, 4),
+    digits.slice(4, 8),
+  ].filter(Boolean);
   return parts.join("/");
 }
 
@@ -315,7 +392,10 @@ function normalizeAddress(raw: string): string {
     s = words.join(" ");
     COMMON_NOUNS.forEach((noun) => {
       const titled = noun.split(" ").map(titleCaseWord).join(" ");
-      s = s.replace(new RegExp(`(^|\\s)${titled}(?=\\s|$)`, "g"), (_m, p1) => `${p1}${noun}`);
+      s = s.replace(
+        new RegExp(`(^|\\s)${titled}(?=\\s|$)`, "g"),
+        (_m, p1) => `${p1}${noun}`,
+      );
     });
     return s;
   });
@@ -345,7 +425,7 @@ function sliceAfterLabel(
   flat: string,
   label: RegExp,
   stops: RegExp[],
-  maxLen = 300
+  maxLen = 300,
 ): string | null {
   const lm = new RegExp(label.source, "i").exec(flat);
   if (!lm) return null;
@@ -357,7 +437,12 @@ function sliceAfterLabel(
     const r = re.exec(flat);
     if (r && r.index < end) end = r.index;
   });
-  const value = block.slice(start, end).replace(/\s+/g, " ").replace(/^[:\-–\s]+/, "").replace(/[;,.\s]+$/, "").trim();
+  const value = block
+    .slice(start, end)
+    .replace(/\s+/g, " ")
+    .replace(/^[:\-–\s]+/, "")
+    .replace(/[;,.\s]+$/, "")
+    .trim();
   return value || null;
 }
 
@@ -381,7 +466,10 @@ function splitLenhBlocks(fullText: string): string[] {
     while ((m = marker.exec(flat)) !== null) indices.push(m.index);
     if (indices.length >= 1) {
       return indices.map((start, i) =>
-        fullText.slice(start, i + 1 < indices.length ? indices[i + 1] : fullText.length)
+        fullText.slice(
+          start,
+          i + 1 < indices.length ? indices[i + 1] : fullText.length,
+        ),
       );
     }
   }
@@ -398,7 +486,8 @@ function extractFromBlock(block: string): Extracted {
   const flat = deaccent(block);
   let batNote = "";
 
-  const fmtDate = (d: string, m: string, y: string) => `${pad2(d)}/${pad2(m)}/${y}`;
+  const fmtDate = (d: string, m: string, y: string) =>
+    `${pad2(d)}/${pad2(m)}/${y}`;
 
   // Họ tên
   const hoTen = sliceAfterLabel(
@@ -406,7 +495,7 @@ function extractFromBlock(block: string): Extracted {
     flat,
     /Ho\s*(?:va\s*)?ten\s*:?/,
     [/Gioi\s*tinh/, /Ten\s*goi\s*khac/, /Sinh\s*ngay/, /Sinh\s*nam/, /;/],
-    120
+    120,
   );
   if (hoTen) f.hoTen = hoTen;
 
@@ -417,7 +506,7 @@ function extractFromBlock(block: string): Extracted {
   // Sinh ngày (đủ ngày/tháng/năm, hoặc chỉ có năm)
   const sinh =
     /Sinh\s*(?:ngay)?\s*:?\s*(\d{1,2})\s*(?:thang|\/|-|\.)\s*(\d{1,2})\s*(?:nam|\/|-|\.)\s*(\d{4})/i.exec(
-      flat
+      flat,
     );
   if (sinh) {
     f.sinhNgay = fmtDate(sinh[1], sinh[2], sinh[3]);
@@ -427,25 +516,45 @@ function extractFromBlock(block: string): Extracted {
   }
 
   // Quốc tịch / Dân tộc / Tôn giáo
-  const qt = sliceAfterLabel(block, flat, /Quoc\s*tich\s*:?/, [/;/, /Dan\s*toc/, /Ton\s*giao/, /Nghe\s*nghiep/], 60);
+  const qt = sliceAfterLabel(
+    block,
+    flat,
+    /Quoc\s*tich\s*:?/,
+    [/;/, /Dan\s*toc/, /Ton\s*giao/, /Nghe\s*nghiep/],
+    60,
+  );
   if (qt) f.quocTich = qt;
 
-  const dt = sliceAfterLabel(block, flat, /Dan\s*toc\s*:?/, [/;/, /Ton\s*giao/, /Quoc\s*tich/, /Nghe\s*nghiep/], 60);
+  const dt = sliceAfterLabel(
+    block,
+    flat,
+    /Dan\s*toc\s*:?/,
+    [/;/, /Ton\s*giao/, /Quoc\s*tich/, /Nghe\s*nghiep/],
+    60,
+  );
   if (dt) f.danToc = dt;
 
   const tg = sliceAfterLabel(
     block,
     flat,
     /Ton\s*giao\s*:?/,
-    [/;/, /Nghe\s*nghiep/, /Quoc\s*tich/, /Dan\s*toc/, /Trinh\s*do/, /So\s*CMND/, /The\s*CCCD/],
-    60
+    [
+      /;/,
+      /Nghe\s*nghiep/,
+      /Quoc\s*tich/,
+      /Dan\s*toc/,
+      /Trinh\s*do/,
+      /So\s*CMND/,
+      /The\s*CCCD/,
+    ],
+    60,
   );
   if (tg) f.tonGiao = tg;
 
   // CCCD: bắt mọi biến thể nhãn rồi lọc chữ số
   const cc =
     /(?:The\s*CCCD|CCCD|CMND|CMTND|Can\s*cuoc\s*cong\s*dan|Ho\s*chieu)[^0-9]{0,40}(\d[\d .]{7,22})/i.exec(
-      flat
+      flat,
     );
   if (cc) f.cccd = cc[1].replace(/\D/g, "");
 
@@ -454,8 +563,15 @@ function extractFromBlock(block: string): Extracted {
     block,
     flat,
     /Noi\s*(?:dang\s*ky\s*)?thuong\s*tru\s*:?|DKTT\s*:?/,
-    [/Noi\s*o\s*hien\s*tai/, /Cho\s*o\s*hien/, /Nghe\s*nghiep/, /Quoc\s*tich/, /Ho\s*ten\s*cha/, /Tien\s*an/],
-    250
+    [
+      /Noi\s*o\s*hien\s*tai/,
+      /Cho\s*o\s*hien/,
+      /Nghe\s*nghiep/,
+      /Quoc\s*tich/,
+      /Ho\s*ten\s*cha/,
+      /Tien\s*an/,
+    ],
+    250,
   );
   if (tt) f.noiThuongTru = normalizeAddress(tt);
 
@@ -466,8 +582,9 @@ function extractFromBlock(block: string): Extracted {
     /So\s*:?\s*(\d{1,6})\s*\/\s*((?:LB|QD)[-\s]*[A-Z0-9]{2,10})/i.exec(flat) ||
     /(\d{1,6})\s*\/\s*((?:LB|QD)[-\s]*[A-Z0-9]{2,10})/i.exec(flat);
   const ngayBanHanh =
-    /Ha\s*Noi\s*,?\s*ngay\s*(\d{1,2})\s*thang\s*(\d{1,2})\s*nam\s*(\d{4})/i.exec(flat) ||
-    /ngay\s*(\d{1,2})\s*thang\s*(\d{1,2})\s*nam\s*(\d{4})/i.exec(flat);
+    /Ha\s*Noi\s*,?\s*ngay\s*(\d{1,2})\s*thang\s*(\d{1,2})\s*nam\s*(\d{4})/i.exec(
+      flat,
+    ) || /ngay\s*(\d{1,2})\s*thang\s*(\d{1,2})\s*nam\s*(\d{4})/i.exec(flat);
   if (soLenh || ngayBanHanh) {
     const soPart = soLenh
       ? `${soLenh[1]}/${soLenh[2].replace(/\s+/g, "").toUpperCase()}`
@@ -475,7 +592,9 @@ function extractFromBlock(block: string): Extracted {
     const ngayPart = ngayBanHanh
       ? fmtDate(ngayBanHanh[1], ngayBanHanh[2], ngayBanHanh[3])
       : "[chưa đọc được ngày]";
-    const tenVanBan = isTamGiu ? "Quyết định tạm giữ" : "Lệnh bắt bị can để tạm giam";
+    const tenVanBan = isTamGiu
+      ? "Quyết định tạm giữ"
+      : "Lệnh bắt bị can để tạm giam";
     f.lenh = `${tenVanBan} số: ${soPart}, ngày ${ngayPart} của Cơ quan CSĐT Bộ Công an`;
   }
 
@@ -488,19 +607,22 @@ function extractFromBlock(block: string): Extracted {
   //   tự xác nhận lại, không âm thầm coi là chắc chắn.
   const ghiChu =
     /Bat\s*bi\s*can\s*(?:vao\s*)?(?:hoi\s*[\d\sgiophut:.]{0,12})?ngay\s*(\d{1,2})\s*(?:thang|\/|-|\.)\s*(\d{1,2})\s*(?:nam|\/|-|\.)\s*(\d{4})/i.exec(
-      flat
+      flat,
     );
   const giaoLenh =
     /giao\s*cho\s*(?:bi\s*can|nguoi\s*bi\s*tam\s*giu)[\s\S]{0,250}?ngay\s*(\d{1,2})\s*(?:thang|\/|-|\.)\s*(\d{1,2})\s*(?:nam|\/|-|\.)\s*(\d{4})/i.exec(
-      flat
+      flat,
     );
   const g1 = ghiChu ? fmtDate(ghiChu[1], ghiChu[2], ghiChu[3]) : null;
   const g2 = giaoLenh ? fmtDate(giaoLenh[1], giaoLenh[2], giaoLenh[3]) : null;
-  const g3 = ngayBanHanh ? fmtDate(ngayBanHanh[1], ngayBanHanh[2], ngayBanHanh[3]) : null;
+  const g3 = ngayBanHanh
+    ? fmtDate(ngayBanHanh[1], ngayBanHanh[2], ngayBanHanh[3])
+    : null;
 
   if (g1) {
     f.biBatNgay = g1;
-    if (g2 && g2 !== g1) batNote = `(lệch với ngày giao lệnh ${g2} — cần đối chiếu)`;
+    if (g2 && g2 !== g1)
+      batNote = `(lệch với ngày giao lệnh ${g2} — cần đối chiếu)`;
   } else if (g2) {
     f.biBatNgay = g2;
     batNote = "(lấy theo ngày giao lệnh, mục ghi chú viết tay chưa đọc được)";
@@ -538,7 +660,9 @@ function buildRecord(ex: Extracted): BiCanRecord {
 }
 
 // Đọc lớp văn bản có sẵn (nếu là PDF được soạn thảo, không phải scan).
-async function extractTextLayer(pdf: pdfjsLib.PDFDocumentProxy): Promise<string[]> {
+async function extractTextLayer(
+  pdf: pdfjsLib.PDFDocumentProxy,
+): Promise<string[]> {
   const pages: string[] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -563,14 +687,18 @@ async function extractTextLayer(pdf: pdfjsLib.PDFDocumentProxy): Promise<string[
 let ocrWorkerPromise: Promise<TesseractWorker> | null = null;
 function getOcrWorker(): Promise<TesseractWorker> {
   if (!ocrWorkerPromise) {
-    ocrWorkerPromise = createWorker("vie");
+    ocrWorkerPromise = createWorker("vie", 1, {
+      workerPath: "tesseract/worker.min.js",
+      corePath: "tesseract/",
+      langPath: "tesseract",
+    });
   }
   return ocrWorkerPromise;
 }
 
 async function extractTextByOcr(
   pdf: pdfjsLib.PDFDocumentProxy,
-  onProgress?: (page: number, total: number) => void
+  onProgress?: (page: number, total: number) => void,
 ): Promise<string[]> {
   const worker = await getOcrWorker();
   // Đặt cùng chế độ phân đoạn với nhánh OCR ảnh (xem giải thích ở
@@ -628,7 +756,7 @@ interface PdfExtraction {
 
 async function extractTextFromPdf(
   file: File,
-  onOcrProgress?: (page: number, total: number) => void
+  onOcrProgress?: (page: number, total: number) => void,
 ): Promise<PdfExtraction> {
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -641,7 +769,9 @@ async function extractTextFromPdf(
     return { pages: layerPages, usedOcr: false };
   }
 
-  const ocrPages = (await extractTextByOcr(pdf, onOcrProgress)).map(cleanupText);
+  const ocrPages = (await extractTextByOcr(pdf, onOcrProgress)).map(
+    cleanupText,
+  );
   return { pages: ocrPages, usedOcr: true };
 }
 
@@ -688,7 +818,7 @@ async function preprocessImageForOcr(file: File): Promise<HTMLCanvasElement> {
 // phải OCR trực tiếp trên ảnh. Một ảnh = một trang = một bị can.
 async function extractTextFromImage(
   file: File,
-  onOcrProgress?: (page: number, total: number) => void
+  onOcrProgress?: (page: number, total: number) => void,
 ): Promise<PdfExtraction> {
   onOcrProgress?.(1, 1);
   const worker = await getOcrWorker();
@@ -708,9 +838,11 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/bmp"];
 // PDF -> đọc lớp văn bản trước rồi mới OCR nếu cần).
 async function extractTextFromFile(
   file: File,
-  onOcrProgress?: (page: number, total: number) => void
+  onOcrProgress?: (page: number, total: number) => void,
 ): Promise<PdfExtraction> {
-  const isImage = IMAGE_TYPES.includes(file.type) || /\.(jpe?g|png|webp|bmp)$/i.test(file.name);
+  const isImage =
+    IMAGE_TYPES.includes(file.type) ||
+    /\.(jpe?g|png|webp|bmp)$/i.test(file.name);
   if (isImage) return extractTextFromImage(file, onOcrProgress);
   return extractTextFromPdf(file, onOcrProgress);
 }
@@ -728,20 +860,26 @@ export default function LenhBatBiCanForm() {
   const [pdfImportSummary, setPdfImportSummary] = useState<string | null>(null);
   const [draftBatNote, setDraftBatNote] = useState("");
   const [rawPdfText, setRawPdfText] = useState("");
-  const [selectedRecord, setSelectedRecord] = useState<BiCanRecord | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<BiCanRecord | null>(
+    null,
+  );
 
   const filteredRecords = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return records;
     return records.filter((r) =>
-      [r.hoTen, r.cccd, r.noiThuongTru, r.lenh].some((v) => (v ?? "").toLowerCase().includes(q))
+      [r.hoTen, r.cccd, r.noiThuongTru, r.lenh].some((v) =>
+        (v ?? "").toLowerCase().includes(q),
+      ),
     );
   }, [records, searchTerm]);
 
   const missingFieldLabels = useMemo<Record<string, string[]>>(() => {
     const report: Record<string, string[]> = {};
     records.forEach((r) => {
-      const missing = ALL_FIELD_KEYS.filter((k) => !r[k]?.trim()).map((k) => LABEL_MAP[k]);
+      const missing = ALL_FIELD_KEYS.filter((k) => !r[k]?.trim()).map(
+        (k) => LABEL_MAP[k],
+      );
       if (missing.length) report[r.hoTen || `(Bản ghi #${r._id})`] = missing;
     });
     return report;
@@ -752,8 +890,11 @@ export default function LenhBatBiCanForm() {
   }
 
   function handleFieldChange(key: FieldKey) {
-    return (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-      updateDraft(key, e.target.value);
+    return (
+      e: ChangeEvent<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >,
+    ) => updateDraft(key, e.target.value);
   }
 
   function resetDraft() {
@@ -767,7 +908,8 @@ export default function LenhBatBiCanForm() {
     const { value: cccdValue, note } = parseCccd(draft.cccd);
     const row = ALL_FIELD_KEYS.reduce((acc, k) => {
       if (k === "cccd") acc[k] = cccdValue;
-      else if (k === "sinhNgay" || k === "biBatNgay") acc[k] = normalizeDateStr(draft[k]);
+      else if (k === "sinhNgay" || k === "biBatNgay")
+        acc[k] = normalizeDateStr(draft[k]);
       else if (DATE_KEYS.includes(k)) acc[k] = toDisplayDate(draft[k]);
       else if (k === "noiThuongTru") acc[k] = normalizeAddress(draft[k]);
       else acc[k] = draft[k].trim();
@@ -776,12 +918,22 @@ export default function LenhBatBiCanForm() {
 
     if (editingId !== null) {
       setRecords((rs) =>
-        rs.map((r) => (r._id === editingId ? { ...r, ...row, cccdNote: note, batNote: draftBatNote } : r))
+        rs.map((r) =>
+          r._id === editingId
+            ? { ...r, ...row, cccdNote: note, batNote: draftBatNote }
+            : r,
+        ),
       );
     } else {
       setRecords((rs) => [
         ...rs,
-        { _id: Date.now(), x: "GP", cccdNote: note, batNote: draftBatNote, ...row },
+        {
+          _id: Date.now(),
+          x: "GP",
+          cccdNote: note,
+          batNote: draftBatNote,
+          ...row,
+        },
       ]);
     }
     resetDraft();
@@ -795,7 +947,7 @@ export default function LenhBatBiCanForm() {
       ALL_FIELD_KEYS.reduce((acc, k) => {
         acc[k] = DATE_KEYS.includes(k) ? toIsoDate(r[k]) : r[k];
         return acc;
-      }, {} as Draft)
+      }, {} as Draft),
     );
   }
 
@@ -816,13 +968,16 @@ export default function LenhBatBiCanForm() {
       let anyOcr = false;
 
       for (const file of Array.from(fileList)) {
-        const { pages, usedOcr } = await extractTextFromFile(file, (page, total) => {
-          setPdfImportSummary(
-            total > 1
-              ? `Không thấy chữ gõ máy trong "${file.name}" — đang nhận dạng chữ (OCR) trang ${page}/${total}...`
-              : `Đang nhận dạng chữ (OCR) trong "${file.name}"...`
-          );
-        });
+        const { pages, usedOcr } = await extractTextFromFile(
+          file,
+          (page, total) => {
+            setPdfImportSummary(
+              total > 1
+                ? `Không thấy chữ gõ máy trong "${file.name}" — đang nhận dạng chữ (OCR) trang ${page}/${total}...`
+                : `Đang nhận dạng chữ (OCR) trong "${file.name}"...`,
+            );
+          },
+        );
         anyOcr = anyOcr || usedOcr;
 
         pages.forEach((pageText, i) => {
@@ -847,15 +1002,15 @@ export default function LenhBatBiCanForm() {
         setRecords((rs) => [...rs, ...newRecords]);
         setPdfImportSummary(
           (anyOcr ? "Đã nhận dạng chữ từ ảnh scan (OCR). " : "") +
-            `Đã tự động thêm ${newRecords.length} hồ sơ vào bảng dữ liệu bên dưới. Vui lòng kiểm tra lại từng dòng (nhất là các mục viết tay) trước khi xuất file.`
+            `Đã tự động thêm ${newRecords.length} hồ sơ vào bảng dữ liệu bên dưới. Vui lòng kiểm tra lại từng dòng (nhất là các mục viết tay) trước khi xuất file.`,
         );
       } else if (rawAll.replace(/=+[^\n]*\n/g, "").trim().length < 200) {
         setPdfImportSummary(
-          "Không đọc được chữ nào kể cả sau khi OCR. Ảnh scan có thể quá mờ hoặc nghiêng — thử chụp/scan lại rõ hơn."
+          "Không đọc được chữ nào kể cả sau khi OCR. Ảnh scan có thể quá mờ hoặc nghiêng — thử chụp/scan lại rõ hơn.",
         );
       } else {
         setPdfImportSummary(
-          "Đã đọc được văn bản (kể cả bằng OCR) nhưng không khớp nhãn nào của mẫu 74. Mở mục \"Xem văn bản đọc được\" bên dưới để kiểm tra nhãn thực tế trong file."
+          'Đã đọc được văn bản (kể cả bằng OCR) nhưng không khớp nhãn nào của mẫu 74. Mở mục "Xem văn bản đọc được" bên dưới để kiểm tra nhãn thực tế trong file.',
         );
       }
     } catch (err) {
@@ -865,7 +1020,6 @@ export default function LenhBatBiCanForm() {
       setIsParsingPdf(false);
     }
   }
-
 
   function exportExcel() {
     if (!records.length) return;
@@ -928,7 +1082,14 @@ export default function LenhBatBiCanForm() {
         />
       );
     if (cfg.type === "date")
-      return <input type="date" className="input" value={value} onChange={handleFieldChange(cfg.key)} />;
+      return (
+        <input
+          type="date"
+          className="input"
+          value={value}
+          onChange={handleFieldChange(cfg.key)}
+        />
+      );
     if (cfg.type === "datestr")
       return (
         <input
@@ -943,7 +1104,11 @@ export default function LenhBatBiCanForm() {
       );
     if (cfg.type === "select")
       return (
-        <select className="input" value={value} onChange={handleFieldChange(cfg.key)}>
+        <select
+          className="input"
+          value={value}
+          onChange={handleFieldChange(cfg.key)}
+        >
           <option value="">— Chọn —</option>
           {cfg.selectOptions?.map((o) => (
             <option key={o} value={o}>
@@ -979,11 +1144,15 @@ export default function LenhBatBiCanForm() {
         <header className="mb-8 border-b border-[#D8D6CC] pb-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs tracking-wide text-[#8A6A3B]">Cơ quan Cảnh sát điều tra</p>
-              <h1 className="mt-1 font-serif text-3xl">BẢNG DỮ LIỆU LỆNH TẠM GIỮ BỊ CAN</h1>
+              <p className="text-xs tracking-wide text-[#8A6A3B]">
+                Cơ quan Cảnh sát điều tra
+              </p>
+              <h1 className="mt-1 font-serif text-3xl">
+                BẢNG DỮ LIỆU LỆNH TẠM GIỮ BỊ CAN
+              </h1>
               <p className="mt-2 max-w-xl text-sm text-[#5B5B54]">
-                Cột X mặc định "GP". Trường nào không có
-                trên văn bản để trống — hệ thống tô đỏ, không suy diễn.
+                Cột X mặc định "GP". Trường nào không có trên văn bản để trống —
+                hệ thống tô đỏ, không suy diễn.
               </p>
             </div>
             <div className="flex gap-2">
@@ -991,7 +1160,9 @@ export default function LenhBatBiCanForm() {
               <StatChip
                 label="Thiếu dữ liệu"
                 value={Object.keys(missingFieldLabels).length}
-                tone={Object.keys(missingFieldLabels).length > 0 ? "warn" : "ok"}
+                tone={
+                  Object.keys(missingFieldLabels).length > 0 ? "warn" : "ok"
+                }
               />
             </div>
           </div>
@@ -1006,15 +1177,19 @@ export default function LenhBatBiCanForm() {
               <h2 className="font-serif text-lg">Đọc từ file PDF / ảnh</h2>
               <p className="mb-4 mt-1 text-sm text-[#5B5B54]">
                 Chọn một hoặc nhiều file "Lệnh bắt bị can để tạm giam" (mẫu số
-                74) hoặc "Quyết định tạm giữ" (mẫu số 77) — nhận cả PDF (gõ
-                máy hoặc scan) lẫn ảnh chụp/scan jpg, png. Hệ thống tự nhận
-                dạng chữ bằng OCR khi cần, có thể mất vài giây mỗi trang/ảnh.
-                Đọc xong sẽ tự động thêm thẳng vào bảng dữ liệu bên dưới —
-                một file chứa nhiều bị can cũng được tách và thêm đủ từng
-                dòng, không cần điền qua form.
+                74) hoặc "Quyết định tạm giữ" (mẫu số 77) — nhận cả PDF (gõ máy
+                hoặc scan) lẫn ảnh chụp/scan jpg, png. Hệ thống tự nhận dạng chữ
+                bằng OCR khi cần, có thể mất vài giây mỗi trang/ảnh. Đọc xong sẽ
+                tự động thêm thẳng vào bảng dữ liệu bên dưới — một file chứa
+                nhiều bị can cũng được tách và thêm đủ từng dòng, không cần điền
+                qua form.
               </p>
               <label className="btn-secondary inline-flex cursor-pointer">
-                {isParsingPdf ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                {isParsingPdf ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Upload size={16} />
+                )}
                 {isParsingPdf ? "Đang đọc..." : "Chọn file PDF hoặc ảnh"}
                 <input
                   type="file"
@@ -1106,7 +1281,8 @@ export default function LenhBatBiCanForm() {
             />
           </div>
           <p className="text-sm text-[#8A8A80]">
-            {filteredRecords.length}/{records.length} dòng · bấm vào một dòng để xem đầy đủ
+            {filteredRecords.length}/{records.length} dòng · bấm vào một dòng để
+            xem đầy đủ
           </p>
         </div>
 
@@ -1175,12 +1351,23 @@ export default function LenhBatBiCanForm() {
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <td
+                      className="px-3 py-2.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex gap-2">
-                        <button onClick={() => editRow(r)} className="icon-btn" aria-label="Sửa">
+                        <button
+                          onClick={() => editRow(r)}
+                          className="icon-btn"
+                          aria-label="Sửa"
+                        >
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => removeRow(r._id)} className="icon-btn" aria-label="Xoá">
+                        <button
+                          onClick={() => removeRow(r._id)}
+                          className="icon-btn"
+                          aria-label="Xoá"
+                        >
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -1193,7 +1380,9 @@ export default function LenhBatBiCanForm() {
         </section>
 
         <div className="mb-10 flex items-center justify-between">
-          <p className="text-sm text-[#5B5B54]">{records.length} dòng trong bảng.</p>
+          <p className="text-sm text-[#5B5B54]">
+            {records.length} dòng trong bảng.
+          </p>
           <button
             onClick={exportExcel}
             disabled={!records.length}
@@ -1209,18 +1398,25 @@ export default function LenhBatBiCanForm() {
             Báo cáo dữ liệu
           </h2>
           {records.length === 0 ? (
-            <p className="text-sm text-[#8A8A80]">Chưa có dữ liệu để kiểm tra.</p>
+            <p className="text-sm text-[#8A8A80]">
+              Chưa có dữ liệu để kiểm tra.
+            </p>
           ) : Object.keys(missingFieldLabels).length === 0 ? (
             <p className="text-sm text-[#5B5B54]">Không thiếu dữ liệu.</p>
           ) : (
             <ul className="space-y-3 text-sm">
               {records
-                .filter((r) => missingFieldLabels[r.hoTen || `(Bản ghi #${r._id})`])
+                .filter(
+                  (r) => missingFieldLabels[r.hoTen || `(Bản ghi #${r._id})`],
+                )
                 .map((r) => {
                   const name = r.hoTen || `(Bản ghi #${r._id})`;
                   const fields = missingFieldLabels[name];
                   return (
-                    <li key={r._id} className="border-b border-[#EDEBE3] pb-3 last:border-0 last:pb-0">
+                    <li
+                      key={r._id}
+                      className="border-b border-[#EDEBE3] pb-3 last:border-0 last:pb-0"
+                    >
                       <button
                         onClick={() => setSelectedRecord(r)}
                         className="font-medium text-[#1B2A4A] underline decoration-[#D8D6CC] underline-offset-2 hover:decoration-[#1B2A4A]"
@@ -1229,7 +1425,10 @@ export default function LenhBatBiCanForm() {
                       </button>
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {fields.map((f) => (
-                          <span key={f} className="rounded-sm bg-[#FBE1DF] px-2 py-0.5 text-xs text-[#B3261E]">
+                          <span
+                            key={f}
+                            className="rounded-sm bg-[#FBE1DF] px-2 py-0.5 text-xs text-[#B3261E]"
+                          >
                             {f}
                           </span>
                         ))}
@@ -1285,8 +1484,8 @@ function StatChip({
     tone === "warn"
       ? "border-[#B3261E]/30 bg-[#FBE1DF] text-[#B3261E]"
       : tone === "ok"
-      ? "border-[#1B2A4A]/15 bg-[#F4F3EF] text-[#5B5B54]"
-      : "border-[#D8D6CC] bg-white text-[#1B2A4A]";
+        ? "border-[#1B2A4A]/15 bg-[#F4F3EF] text-[#5B5B54]"
+        : "border-[#D8D6CC] bg-white text-[#1B2A4A]";
   return (
     <div className={`rounded-sm border px-4 py-2 text-right ${toneClass}`}>
       <p className="font-serif text-xl leading-none">{value}</p>
@@ -1317,10 +1516,18 @@ function DetailModal({
       >
         <div className="mb-5 flex items-start justify-between gap-4 border-b border-[#D8D6CC] pb-4">
           <div>
-            <p className="text-xs tracking-wide text-[#8A6A3B]">X: {record.x}</p>
-            <h2 className="font-serif text-xl">{record.hoTen || "(Chưa có họ tên)"}</h2>
+            <p className="text-xs tracking-wide text-[#8A6A3B]">
+              X: {record.x}
+            </p>
+            <h2 className="font-serif text-xl">
+              {record.hoTen || "(Chưa có họ tên)"}
+            </h2>
           </div>
-          <button onClick={onClose} className="icon-btn shrink-0" aria-label="Đóng">
+          <button
+            onClick={onClose}
+            className="icon-btn shrink-0"
+            aria-label="Đóng"
+          >
             <XIcon size={16} />
           </button>
         </div>
@@ -1346,7 +1553,9 @@ function DetailModal({
                     >
                       {isEmpty ? "— (trống)" : val}
                     </p>
-                    {note && <p className="mt-0.5 text-xs text-[#B3261E]">{note}</p>}
+                    {note && (
+                      <p className="mt-0.5 text-xs text-[#B3261E]">{note}</p>
+                    )}
                   </div>
                 );
               })}
@@ -1358,7 +1567,10 @@ function DetailModal({
           <button onClick={onEdit} className="btn-primary">
             <Pencil size={16} /> Sửa hồ sơ này
           </button>
-          <button onClick={onDelete} className="btn-secondary border-[#B3261E] text-[#B3261E]">
+          <button
+            onClick={onDelete}
+            className="btn-secondary border-[#B3261E] text-[#B3261E]"
+          >
             <Trash2 size={16} /> Xoá
           </button>
         </div>
@@ -1367,9 +1579,19 @@ function DetailModal({
   );
 }
 
-function Field({ label, children, full }: { label: string; children: ReactNode; full?: boolean }) {
+function Field({
+  label,
+  children,
+  full,
+}: {
+  label: string;
+  children: ReactNode;
+  full?: boolean;
+}) {
   return (
-    <label className={`flex flex-col gap-1 ${full ? "sm:col-span-2 lg:col-span-4" : ""}`}>
+    <label
+      className={`flex flex-col gap-1 ${full ? "sm:col-span-2 lg:col-span-4" : ""}`}
+    >
       <span className="text-xs font-medium text-[#5B5B54]">{label}</span>
       {children}
     </label>
