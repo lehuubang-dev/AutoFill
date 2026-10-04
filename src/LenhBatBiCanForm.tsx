@@ -54,6 +54,7 @@ type FieldKey =
   | "danToc"
   | "tonGiao"
   | "cccd"
+  | "hanhViPhamToi"
   | "noiThuongTru"
   | "lenh"
   | "biBatNgay";
@@ -123,6 +124,12 @@ const FIELDS: FieldConfig[] = [
   },
   { key: "cccd", label: "Thẻ CCCD/Thẻ CC", type: "text", placeholder: "12 số" },
   {
+    key: "hanhViPhamToi",
+    label: "Hành vi phạm tội",
+    type: "textarea",
+    full: true,
+  },
+  {
     key: "biBatNgay",
     label: "Bị bắt ngày",
     type: "datestr",
@@ -166,6 +173,10 @@ const FIELD_SECTIONS: FieldSection[] = [
     ],
   },
   {
+    title: "Vụ án",
+    keys: ["hanhViPhamToi"],
+  },
+  {
     title: "Bắt giữ & nơi cư trú",
     keys: ["biBatNgay", "noiThuongTru", "lenh"],
   },
@@ -203,9 +214,8 @@ const TABLE_COLUMNS: { key: "stt" | "x" | FieldKey; label: string }[] = [
 
 // Ánh xạ khi xuất Excel: đặt đúng vào vị trí cột của file mẫu có sẵn
 // (không phải cột tự sinh liền nhau như bảng hiển thị). Cột nào không
-// nằm trong danh sách này (ví dụ "Quê quán" ở cột D — hệ thống hiện
-// chưa thu thập dữ liệu này) vẫn được chừa chỗ đúng vị trí nhưng để
-// trống, không suy diễn dữ liệu.
+// nằm trong danh sách này vẫn được chừa chỗ đúng vị trí nhưng để trống,
+// không suy diễn dữ liệu.
 interface ExportField {
   col: string; // ký hiệu cột trong file mẫu, vd "A", "AA", "AS"
   label: string;
@@ -217,13 +227,9 @@ interface ExportField {
 const EXPORT_FIELDS: ExportField[] = [
   { col: "A", label: "X", key: "x" },
   { col: "B", label: "Họ tên", key: "hoTen" },
-  {
-    col: "C",
-    label: "Năm sinh",
-    key: "sinhNgay",
-    getValue: (r) => r.sinhNgay.split("/").pop() ?? "",
-  },
+  { col: "C", label: "Năm sinh", key: "sinhNgay" },
   { col: "E", label: "ĐKTT", key: "noiThuongTru" },
+  { col: "H", label: "Hành vi phạm tội", key: "hanhViPhamToi" },
   { col: "L", label: "GT", key: "gioiTinh" },
   { col: "M", label: "Dân tộc", key: "danToc" },
   { col: "N", label: "Quốc tịch", key: "quocTich" },
@@ -558,6 +564,26 @@ function extractFromBlock(block: string): Extracted {
     );
   if (cc) f.cccd = cc[1].replace(/\D/g, "");
 
+  // Hành vi phạm tội: nguyên tắc chung, không phụ thuộc câu chữ đứng
+  // trước (mẫu 74 viết "...đã có hành vi...", mẫu 77 viết "Căn cứ:
+  // Hành vi..." — OCR cũng có thể làm rớt vài chữ trong phần này). Chỉ
+  // cần bắt được đúng từ "hành vi", lấy tội danh ngay sau đó, dừng lại
+  // khi gặp:
+  //  - "của" (dẫn sang tên người, kiểu mẫu 77: "...ACT của TÊN đã...")
+  //  - "phạm vào" (mở đầu phần viện dẫn điều/khoản, kiểu mẫu 74/77:
+  //    "...ACT phạm vào khoản N Điều M..." / "...ACT đã phạm vào Điều M...")
+  // Không lấy điều khoản, chỉ lấy đúng tội danh. Viết hoa chữ đầu khi lưu.
+  const hv = sliceAfterLabel(
+    block,
+    flat,
+    /hanh\s*vi\s*:?/,
+    [/\s+cua\s+/, /pham\s*vao/, /;/],
+    200,
+  );
+  if (hv) {
+    f.hanhViPhamToi = hv.charAt(0).toLocaleUpperCase("vi") + hv.slice(1);
+  }
+
   // Nơi thường trú
   const tt = sliceAfterLabel(
     block,
@@ -868,7 +894,7 @@ export default function LenhBatBiCanForm() {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return records;
     return records.filter((r) =>
-      [r.hoTen, r.cccd, r.noiThuongTru, r.lenh].some((v) =>
+      [r.hoTen, r.cccd, r.noiThuongTru, r.lenh, r.hanhViPhamToi].some((v) =>
         (v ?? "").toLowerCase().includes(q),
       ),
     );
@@ -1039,7 +1065,7 @@ export default function LenhBatBiCanForm() {
       EXPORT_FIELDS.forEach((f, idx) => {
         if (f.getValue) row[colIndexes[idx]] = f.getValue(r);
         else if (f.key) row[colIndexes[idx]] = cellValue(r, f.key);
-        // Không có key/getValue (vd "Quê quán") -> để trống, không suy diễn.
+        // Không có key/getValue -> để trống, không suy diễn.
       });
       return row;
     });
